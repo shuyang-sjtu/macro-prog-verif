@@ -791,7 +791,7 @@ Notation "[[ P ]]  c  [[ Q ]] ms" :=
   : hoare_spec_scope.
 
 Notation "{{ P }}  c  {{ Q }}" :=
-  (hoare_triple P c Q) (at level 90, c at next level)
+  (hoare_triple_o P c Q) (at level 90, c at next level)
   : hoare_spec_scope.
 
 
@@ -1097,7 +1097,198 @@ Proof.
   + reflexivity.
 Qed.
      
+Theorem hoare_consequence_pre : forall ms (P P' Q : assertion) c,
+  [[P']] c [[Q]] ms ->
+  assert_implies ms P P' ->
+  [[P]] c [[Q]] ms.
+Proof.
+  intros.
+  unfold hoare_triple_prop. unfold hoare_triple. simpl.
+  intros.
+  unfold hoare_triple_prop in H; unfold hoare_triple in H; simpl in H.
+  unfold assert_implies in H0.
+  apply (H st st0 st' C).
+  - assumption.
+  - apply H0 in H2. assumption.
+  - exact H3.
+Qed.
+     
+Theorem hoare_consequence_post : forall ms (P Q Q': assertion) c,
+  [[P]] c [[Q']] ms ->
+  assert_implies ms Q' Q ->
+  [[P]] c [[Q]] ms.
+Proof.
+  intros.
+  unfold hoare_triple_prop. unfold hoare_triple. simpl.
+  intros.
+  unfold hoare_triple_prop in H; unfold hoare_triple in H; simpl in H.
+  unfold assert_implies in H0.
+  apply H0.
+  apply (H st st0 st' C).
+  - assumption.
+  - assumption.
+  - assumption.
+Qed.
 
+Theorem hoare_consequence : forall (P P' Q Q' : assertion) ms c,
+  [[P']] c [[Q']] ms ->
+  assert_implies ms P P' ->
+  assert_implies ms Q' Q ->
+  [[P]] c [[Q]] ms.
+Proof.
+  intros.
+  apply hoare_consequence_pre with (P' := P').
+  apply hoare_consequence_post with (Q' := Q').
+  assumption. assumption. assumption.
+Qed.
+
+Theorem hoare_skip : forall P ms,
+    [[P]] SKIP [[P]] ms.
+Proof.
+  intros P ms.
+  unfold hoare_triple_prop. intros st.
+  unfold hoare_triple; simpl.
+  intros.
+  inversion H; subst.
+  inversion H1; subst.
+  exact H0.
+Qed.
+
+Theorem hoare_seq : forall ms P Q R c1 c2,
+     [[Q]] c2 [[R]] ms ->
+     [[P]] c1 [[Q]] ms ->
+     [[P]] c1;;c2 [[R]] ms.
+Proof.
+  intros.
+  unfold hoare_triple_prop in *.
+  unfold hoare_triple in *.
+  intros.
+  inversion H1; subst.
+  inversion H3; subst.
+  apply H with (st0:=st'0) (C:=C2).
+  - auto.
+  - exact H9.
+  - apply H0 with (st0:=st0) (C:=C1).
+    + auto.
+    + exact H7.
+    + exact H2.
+    + exact H6.
+  - exact H11.
+Qed.
+
+Definition wedge_assert (P : assertion) (Q : assertion) : assertion :=
+  fun ms st => P ms st /\ Q ms st.
+
+Theorem hoare_triple_embed : forall P Q C p q c ms,
+    ([[P]] C [[Q]] ms -> [[p]] c [[q]] ms) <->
+    [[wedge_assert p (hoare_triple P C Q)]] c [[q]] ms.
+Proof.
+  split.
+  (** -> **)
+  intros.
+  unfold wedge_assert; simpl.
+  unfold hoare_triple; simpl.
+  unfold hoare_triple_prop in *; simpl in *.
+  intros.
+  unfold hoare_triple; simpl.
+  intros.
+  assert(forall st : State, hoare_triple P C Q ms st).
+  {
+    intros.
+    unfold hoare_triple. intros.
+    destruct H1.
+    apply H6 with (st:=st2) (C0:=C1).
+    assumption. assumption.
+    assumption.
+  }
+  assert(forall st : State, hoare_triple p c q ms st).
+  {
+    apply H.
+    apply H3.
+  }
+  unfold hoare_triple in H4.
+  apply H4 with (st0:=st0) (C:=C0).
+  assumption. assumption.
+  apply H1. assumption.
+  (** <- **)
+  intros.
+  unfold wedge_assert in H.
+  unfold hoare_triple_prop in *.
+  intros.
+  unfold hoare_triple; unfold hoare_triple in H0.
+  intros.
+  specialize H with (st:=st0).
+  unfold hoare_triple in H; simpl in H.
+  apply H with (st:=st0) (st':=st') in H1.
+  - exact H1.
+  - split. assumption. intros.
+    apply H0 with (st':=st'0) (C0:=C1) (st0:=st1).
+    + auto.
+    + exact H4.
+    + exact H5.
+    + exact H6.
+  - exact H3.
+Qed.
+
+Theorem hoare_triple_o_embed : forall P Q C p q c ms,
+    ( (forall st, ({{P}} C {{Q}} ms st)) -> [[p]] c [[q]] ms ) <->
+    [[wedge_assert p ({{P}} C {{Q}})]] c [[q]] ms.
+Proof.
+  split.
+  (** -> **)
+  intros.
+  unfold wedge_assert.
+  unfold hoare_triple_prop. intros.
+  unfold hoare_triple. intros.
+  destruct H1.
+  assert (forall st : State, ({{P}} C {{Q}}) ms st).
+  {
+    intros.
+    unfold hoare_triple_o in *.
+    intros.
+    apply H3 with (st:=st2) (st':=st'0).
+    assumption. assumption.
+  }
+  apply H in H4.
+  unfold hoare_triple_prop in H4.
+  unfold hoare_triple in H4.
+  apply H4 with (st0:=st0) (st':=st') (C:=C0).
+  assumption. assumption. assumption. assumption.
+  (** <- **)
+  intros.
+  unfold wedge_assert in *.
+  unfold hoare_triple_prop in *.
+  unfold hoare_triple_o in *.
+  intros.
+  unfold hoare_triple in *. intros.
+  apply H with (st0:=st0) (st':=st') (C0:=C0).
+  + assumption. + assumption.
+  + split. assumption. apply H0. auto.
+  + exact H3.
+Qed.
+
+Theorem hoare_embed_com : forall ms e E P Q,
+    unfold_com ms e E ->
+    [[wedge_assert P  ({{P}} E {{Q}})]] e [[Q]] ms.        
+Proof.
+  intros.
+  apply hoare_triple_o_embed.
+  intros.
+  unfold hoare_triple_prop.
+  unfold hoare_triple.
+  unfold hoare_triple_o in H0.
+  intros.
+  apply H0 with (st0:=st0).
+  + assumption.
+  + exact H2.
+  + assert (C = E).
+    apply unfold_com_uniqueness with (m:=ms) (e:=e).
+    exact H1. exact H.
+    rewrite <- H4.
+    assumption.
+Qed.
+
+(** useless yet
 Fixpoint conv_exp_EXP (e : exp) : EXP :=
   match e with
   | num x => Num x
@@ -1153,5 +1344,6 @@ Inductive exp_eval : mstate -> State -> exp -> nat -> Prop :=
     exp_eval ms st (plus e1 e2) (if (a1=?0) || (a2=?0) then 0 else 1)
 | EE_macro: forall ms st e,
     unfold_exp ms 
+**)
 
 Close Scope hoare_spec_scope.
