@@ -917,6 +917,19 @@ Proof.
     inversion H.
 Qed.
 
+Lemma S_update_same2 : forall X st,
+    (X !-> st X; st) = st.
+Proof.
+  intros X st.
+  apply function_equal.
+  intros x.
+  destruct (X =? x) eqn:eq.
+  - apply equality_bool in eq. rewrite <- eq.
+    rewrite S_update_same. reflexivity.
+  - unfold S_update.
+    rewrite eq. reflexivity.
+Qed.
+
 Lemma S_update_shadow : forall X a b st,
     (X !-> a; X !-> b; st) = (X !-> a; st).
 Proof.
@@ -989,5 +1002,156 @@ Proof.
       apply H3 in H4.
       inversion H4.
 Qed.
+
+Theorem hoare_asgn : forall Q X e E ms, unfold_exp ms e E ->
+  [[Q [X |-> E] ]] (^(num X) ::= e)%lang1 [[Q]]ms.
+Proof.
+  intros.
+  unfold hoare_triple_prop.
+  unfold hoare_triple; simpl.
+  intros.
+  assert(C = (^X0 ::= E)%lang0).
+  {
+    apply unfold_com_uniqueness with (m:=ms) (e:=(^X0 ::= e)%lang1).
+    - assumption.
+    - apply c_ass.
+      + exact H.
+      + apply a_poi, a_num.
+  }
+  rewrite H3 in H2.
+  unfold assn_sub in H1.
+  inversion H2; subst.
+  assert(EXP_eval st0 X0 = X0). auto.
+  rewrite H3.
+  exact H1.
+Qed.
+  
+Theorem hoare_asgn_fwd :
+  forall m e E P ms X, unfold_exp ms e E ->
+  [[fun ms st => P ms st /\ st X = m]]
+    ^X ::= e
+  [[fun ms st => P ms (X !-> m ; st)
+                 /\ st X = EXP_eval (X !-> m ; st) E ]] ms.
+Proof.
+  unfold hoare_triple_prop; unfold hoare_triple; intros; simpl.
+  destruct H1. inversion H0; subst.
+  assert(A = E). apply unfold_exp_uniqueness with (m:=ms) (e:=e). assumption. assumption.
+  subst.
+  split.
+  -- assert ((X0 !-> st0 X0; st') = st0).
+     {
+       inversion H2; subst.
+       assert(EXP_eval st0 x0 = X0).
+       {
+         inversion H9; subst.
+         inversion H6; subst.
+         simpl. reflexivity.
+       }
+       rewrite H3. rewrite S_update_shadow.
+       apply S_update_same2.
+     }
+     rewrite H3. exact H1.
+  -- inversion H2; subst.
+     assert(EXP_eval st0 x0 = X0).
+     {
+       inversion H9; subst.
+       inversion H6; subst.
+       simpl. reflexivity.
+     }
+     rewrite H3.
+     rewrite S_update_same.
+     rewrite S_update_shadow.
+     rewrite S_update_same2.
+     reflexivity.
+Qed.
+
+Theorem hoare_asgn_fwd_exists :
+  forall ms e E (X:nat) P, unfold_exp ms e E ->
+  [[fun ms st => P ms st]]
+    ^X ::= e
+  [[fun ms st => exists m, P ms (X !-> m ; st) /\
+                st X = EXP_eval (X !-> m ; st) E ]] ms.
+Proof.
+  unfold hoare_triple_prop; unfold hoare_triple; intros; simpl.
+  exists (st0 X0).
+  inversion H0; subst.
+  inversion H2; subst.
+  assert(A = E).
+  {
+    apply unfold_exp_uniqueness with (m:=ms) (e:=e).
+    assumption. assumption.
+  }
+  subst.
+  assert(EXP_eval st0 x0 = X0).
+  {
+    inversion H8; subst.
+    inversion H7; subst.
+    simpl. reflexivity.
+  }
+  repeat rewrite H3.
+  rewrite S_update_shadow.
+  repeat rewrite S_update_same.
+  repeat rewrite S_update_same2.
+  split.
+  + exact H1.
+  + reflexivity.
+Qed.
+     
+
+Fixpoint conv_exp_EXP (e : exp) : EXP :=
+  match e with
+  | num x => Num x
+  | poi x => Poi (conv_exp_EXP x)
+  | plus x y => Plus (conv_exp_EXP x) (conv_exp_EXP y)
+  | minus x y => Minus (conv_exp_EXP x) (conv_exp_EXP y)
+  | mult x y => Mult (conv_exp_EXP x) (conv_exp_EXP y)
+  | eq x y => Eq (conv_exp_EXP x) (conv_exp_EXP y)
+  | le x y => Le (conv_exp_EXP x) (conv_exp_EXP y)
+  | not x => Not (conv_exp_EXP x)
+  | and x y => And (conv_exp_EXP x) (conv_exp_EXP y)
+  | _ => Inv
+  end.
+
+Fixpoint conv_EXP_exp (e : EXP) : exp :=
+  match e with
+  | Num x => num x
+  | Poi x => poi (conv_EXP_exp x)
+  | Plus x y => plus (conv_EXP_exp x) (conv_EXP_exp y)
+  | Minus x y => minus (conv_EXP_exp x) (conv_EXP_exp y)
+  | Mult x y => mult (conv_EXP_exp x) (conv_EXP_exp y)
+  | Eq x y => eq (conv_EXP_exp x) (conv_EXP_exp y)
+  | Le x y => le (conv_EXP_exp x) (conv_EXP_exp y)
+  | Not x => not (conv_EXP_exp x)
+  | And x y => and (conv_EXP_exp x) (conv_EXP_exp y)
+  | _ => inv
+  end.
+
+
+Inductive exp_eval : mstate -> State -> exp -> nat -> Prop := 
+| EE_num : forall ms st x, exp_eval ms st (num x) x
+| EE_poi : forall ms st x y,
+    exp_eval ms st x y -> exp_eval ms st (poi x) (st y)
+| EE_plus: forall ms st e1 e2 a1 a2,
+    exp_eval ms st e1 a1 -> exp_eval ms st e2 a2 ->
+    exp_eval ms st (plus e1 e2) (a1 + a2)
+| EE_minus: forall ms st e1 e2 a1 a2,
+    exp_eval ms st e1 a1 -> exp_eval ms st e2 a2 ->
+    exp_eval ms st (plus e1 e2) (a1 - a2)
+| EE_mult: forall ms st e1 e2 a1 a2,
+    exp_eval ms st e1 a1 -> exp_eval ms st e2 a2 ->
+    exp_eval ms st (plus e1 e2) (a1 * a2)
+| EE_eq: forall ms st e1 e2 a1 a2,
+    exp_eval ms st e1 a1 -> exp_eval ms st e2 a2 ->
+    exp_eval ms st (plus e1 e2) (if a1 =? a2 then 1 else 0)
+| EE_le: forall ms st e1 e2 a1 a2,
+    exp_eval ms st e1 a1 -> exp_eval ms st e2 a2 ->
+    exp_eval ms st (plus e1 e2) (if a1 <=? a2 then 1 else 0)
+| EE_not:forall ms st e a,
+    exp_eval ms st e a -> exp_eval ms st (not e) (if a=?0 then 1 else 0)
+| EE_and: forall ms st e1 e2 a1 a2,
+    exp_eval ms st e1 a1 -> exp_eval ms st e2 a2 ->
+    exp_eval ms st (plus e1 e2) (if (a1=?0) || (a2=?0) then 0 else 1)
+| EE_macro: forall ms st e,
+    unfold_exp ms 
 
 Close Scope hoare_spec_scope.
