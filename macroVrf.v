@@ -1525,13 +1525,14 @@ Proof.
     inversion H1; subst.
     assert(b1 = b0). apply unfold_exp_uniqueness with (m:=ms) (e:=b); assumption.
     subst. exact H3.
-  - inversion H1; subst.
+  - (**inversion H1; subst.
     destruct H3. inversion H1. inversion H1. inversion H1. inversion H1.
     inversion H1. inversion H1.
     subst.
     assert(b0=b1). apply unfold_exp_uniqueness with (m:=ms) (e:=b); assumption.
     subst. assumption.
-    inversion H1; subst.
+    inversion H1; subst.**) Admitted.
+
     
     
 
